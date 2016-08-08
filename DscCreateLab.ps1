@@ -8,6 +8,7 @@
             xComputerManagementpath = "$(gmo xComputerManagement -ListAvailable | % modulebase | select -first 1)"
             xPendingReboot = "$(gmo xPendingReboot -ListAvailable | % modulebase | select -first 1)"
             XActiveDirectory = "$(gmo XActiveDirectory -ListAvailable | % modulebase | select -first 1)"
+            xSQLServer = "$(gmo xSQLServer -ListAvailable | % modulebase | select -first 1)"
             unattendedFilePathToCopy = "$((Resolve-Path '.\unattend.xml').Path)"
         }
     )
@@ -25,18 +26,19 @@ Configuration Createlab
         $MaxMemory = 4GB,   # amount of memory in mb
         $StartupMemory = 2GB,   # amount of memory in mb
         $CPU = '2',       # number of CPUs to allocate
-        $SwitchName = 'Lab' # Switch name for Lab
+        $SwitchName = 'Lab', # Switch name for Lab
+        $SourceBase = 'C:\Iso\Source'
     )
     
     # Files to be injected
-    $DSCSourcePath = "$BaseDir\ServerConfig\$($name).mof"
-    $DSCRebootTrueSourcePath = "$BaseDir\ServerConfig\$($name).meta.mof"
+    $DSCSourcePath = "$BaseDir\ServerConfig\$name.mof"
+    $DSCRebootTrueSourcePath = "$BaseDir\ServerConfig\$name.meta.mof"
 
     # Where to inject te modules
     $ModuleTargetpath = "Program Files\WindowsPowerShell\Modules\"
         
     #DestinationPath
-    $DestinationPath = "h:\Lab\$($name)"
+    $DestinationPath = "h:\Lab\$name"
 
     Import-DscResource -ModuleName xHyper-v, PSDesiredStateConfiguration
     Node $AllNodes.Where{$_.Role -eq "VM"}.Nodename
@@ -67,7 +69,7 @@ Configuration Createlab
         }
         xVhdFile Copyfiles
         {
-            VhdPath = "$DestinationPath\$($name).vhdx"
+            VhdPath = "$DestinationPath\$name.vhdx"
 
             FileDirectory = @(
                 MSFT_xFileDirectory {
@@ -86,10 +88,7 @@ Configuration Createlab
                                         SourcePath = $Node.xPendingReboot
                                         DestinationPath = "$ModuleTargetpath\xPendingReboot\"
                                     }
-                MSFT_xFileDirectory {
-                                        SourcePath = $Node.XActiveDirectory
-                                        DestinationPath = "$ModuleTargetpath\XActiveDirectory\"
-                                    }
+                
                 MSFT_xFileDirectory {
                                         SourcePath = $DSCSourcePath
                                         DestinationPath = "Windows\System32\Configuration\pending.mof"
@@ -98,15 +97,21 @@ Configuration Createlab
                                         SourcePath = $DSCRebootTrueSourcePath
                                         DestinationPath = "Windows\System32\Configuration\metaconfig.mof"
                                     }
-                if ($name -eq 'DC1'){
+                if (($name -eq 'DC1') -or ($name -eq 'DC2')){
                     MSFT_xFileDirectory {
-                                        SourcePath = 'C:\iso\dsc1\serverConfig.ps1'
-                                        DestinationPath = "DSC\lab.ps1"
+                                        SourcePath = $Node.XActiveDirectory
+                                        DestinationPath = "$ModuleTargetpath\XActiveDirectory\"
                                     }
-                   MSFT_xFileDirectory {
-                                        SourcePath = 'C:\iso\dsc1\Configs\DC1.psd1'
-                                        DestinationPath = "DSC\lab.psd1"
-                                    } 
+                }
+                if (($name -eq 'SQL1') -or ($name -eq 'SQL2')){
+                     MSFT_xFileDirectory {
+                                        SourcePath = "$sourceBase\SQL2014"
+                                        DestinationPath = "Install\SQL"
+                                    }
+                    MSFT_xFileDirectory {
+                                        SourcePath = $Node.xSQLServer
+                                        DestinationPath = "$ModuleTargetpath\xSQLServer"
+                                    }
                 }
             )
             DependsOn = "[xVHD]NewVhd1"
@@ -114,9 +119,9 @@ Configuration Createlab
  
         xVMHyperV Server
         {
-            Name               = "$($name)"
+            Name               = $name
             SwitchName         = $SwitchName
-            VhdPath            = "$DestinationPath\$($name).vhdx"
+            VhdPath            = "$DestinationPath\$name.vhdx"
             MaximumMemory      = $MaxMemory
             MinimumMemory      = $MinMemory
             StartupMemory      = $StartupMemory
